@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Iterable, Literal, Optional, Union
+from typing import Annotated, Any, Iterable, Literal, Optional, Union
 
 import sqlalchemy as sa
 from pydantic import AfterValidator, BaseModel, Field, RootModel
@@ -24,6 +24,51 @@ async def _delete_matching_traces(
         sa.select(Trace.id).where(Trace.project_rowid.in_(project_rowids)).where(trace_filter)
     )
     await delete_traces(session, Trace.id.in_(candidate_trace_ids))
+
+
+async def _delete_matching_traces_in_batches(
+    db: Any,
+    project_rowids: Union[Iterable[int], InElementRole],
+    trace_filter: sa.ColumnElement[bool],
+    *,
+    batch_size: int = 1_000,
+) -> set[int]:
+    from phoenix.db.helpers import SupportedSQLDialect
+    from phoenix.db.models import Span, Trace
+
+    dialect = getattr(db, "dialect", None)
+    while True:
+        async with db() as session:
+            candidate_stmt = (
+                sa.select(Trace.id)
+                .where(Trace.project_rowid.in_(project_rowids), trace_filter)
+                .order_by(Trace.start_time.asc(), Trace.id.asc())
+                .limit(batch_size)
+            )
+            if dialect is SupportedSQLDialect.POSTGRESQL:
+                candidate_stmt = candidate_stmt.with_for_update(skip_locked=True)
+            trace_ids = list(await session.scalars(candidate_stmt))
+            if not trace_ids:
+                break
+            span_stmt = (
+                sa.select(Span.id)
+                .where(Span.trace_rowid.in_(trace_ids))
+                .order_by(Span.id.asc())
+                .limit(batch_size)
+            )
+            if dialect is SupportedSQLDialect.POSTGRESQL:
+                span_stmt = span_stmt.with_for_update(skip_locked=True)
+            span_ids = list(await session.scalars(span_stmt))
+            if span_ids:
+                await session.execute(sa.delete(Span).where(Span.id.in_(span_ids)))
+                continue
+            await session.execute(
+                sa.delete(Trace).where(
+                    Trace.id.in_(trace_ids),
+                    ~sa.select(sa.literal(1)).where(Span.trace_rowid == Trace.id).exists(),
+                )
+            )
+    return set()
 
 
 class _MaxDays(BaseModel):
@@ -83,6 +128,19 @@ class MaxDaysRule(_MaxDays, BaseModel):
         # stale until their 1h TTL expires, which is acceptable for that single-node path.
         return set()
 
+    async def delete_traces_in_batches(
+        self,
+        db: Any,
+        project_rowids: Union[Iterable[int], InElementRole],
+        *,
+        batch_size: int = 1_000,
+    ) -> set[int]:
+        if self.max_days <= 0:
+            return set()
+        return await _delete_matching_traces_in_batches(
+            db, project_rowids, self.max_days_filter, batch_size=batch_size
+        )
+
 
 class MaxCountRule(_MaxCount, BaseModel):
     type: Literal["max_count"] = "max_count"
@@ -104,6 +162,19 @@ class MaxCountRule(_MaxCount, BaseModel):
         )
         # Empty set by design; see MaxDaysRule.delete_traces for why (avoids #13906 OOM).
         return set()
+
+    async def delete_traces_in_batches(
+        self,
+        db: Any,
+        project_rowids: Union[Iterable[int], InElementRole],
+        *,
+        batch_size: int = 1_000,
+    ) -> set[int]:
+        if self.max_count <= 0:
+            return set()
+        return await _delete_matching_traces_in_batches(
+            db, project_rowids, self.max_count_filter(project_rowids), batch_size=batch_size
+        )
 
 
 class MaxDaysOrCountRule(_MaxDays, _MaxCount, BaseModel):
@@ -127,6 +198,22 @@ class MaxDaysOrCountRule(_MaxDays, _MaxCount, BaseModel):
         # Empty set by design; see MaxDaysRule.delete_traces for why (avoids #13906 OOM).
         return set()
 
+    async def delete_traces_in_batches(
+        self,
+        db: Any,
+        project_rowids: Union[Iterable[int], InElementRole],
+        *,
+        batch_size: int = 1_000,
+    ) -> set[int]:
+        if self.max_days <= 0 and self.max_count <= 0:
+            return set()
+        return await _delete_matching_traces_in_batches(
+            db,
+            project_rowids,
+            sa.or_(self.max_days_filter, self.max_count_filter(project_rowids)),
+            batch_size=batch_size,
+        )
+
 
 class TraceRetentionRule(RootModel[Union[MaxDaysRule, MaxCountRule, MaxDaysOrCountRule]]):
     root: Annotated[
@@ -142,6 +229,15 @@ class TraceRetentionRule(RootModel[Union[MaxDaysRule, MaxCountRule, MaxDaysOrCou
         project_rowids: Union[Iterable[int], InElementRole],
     ) -> set[int]:
         return await self.root.delete_traces(session, project_rowids)
+
+    async def delete_traces_in_batches(
+        self,
+        db: Any,
+        project_rowids: Union[Iterable[int], InElementRole],
+        *,
+        batch_size: int = 1_000,
+    ) -> set[int]:
+        return await self.root.delete_traces_in_batches(db, project_rowids, batch_size=batch_size)
 
 
 def _time_of_next_run(

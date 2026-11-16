@@ -55,7 +55,9 @@ class TraceDataSweeper(DaemonTask):
 
     async def _get_policies(self) -> list[ProjectTraceRetentionPolicy]:
         stmt = sa.select(ProjectTraceRetentionPolicy).options(
-            selectinload(ProjectTraceRetentionPolicy.projects).load_only(Project.id)
+            selectinload(ProjectTraceRetentionPolicy.projects).load_only(
+                Project.id, Project.deleted_at
+            )
         )
         async with self._db() as session:
             result = await session.scalars(stmt)
@@ -79,12 +81,17 @@ class TraceDataSweeper(DaemonTask):
     async def _apply(self, policy: ProjectTraceRetentionPolicy) -> None:
         try:
             project_rowids = (
-                (sa.select(Project.id).where(Project.trace_retention_policy_id.is_(None)))
+                (
+                    sa.select(Project.id).where(
+                        Project.trace_retention_policy_id.is_(None),
+                        Project.deleted_at.is_(None),
+                        Project.kind.in_(("STANDARD", "PLAYGROUND")),
+                    )
+                )
                 if policy.id == DEFAULT_PROJECT_TRACE_RETENTION_POLICY_ID
-                else [p.id for p in policy.projects]
+                else [p.id for p in policy.projects if p.deleted_at is None]
             )
-            async with self._db() as session:
-                result = await policy.rule.delete_traces(session, project_rowids)
+            result = await policy.rule.delete_traces_in_batches(self._db, project_rowids)
             self._dml_event_handler.put(SpanDeleteEvent(tuple(result)))
             RETENTION_POLICY_EXECUTIONS.labels(status="success").inc()
         except Exception:
