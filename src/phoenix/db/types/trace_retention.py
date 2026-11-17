@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Iterable, Literal, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Iterable, Literal, Optional, Union
 
 import sqlalchemy as sa
 from pydantic import AfterValidator, BaseModel, Field, RootModel
@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.roles import InElementRole
 
 from phoenix.utilities import hour_of_week
+
+if TYPE_CHECKING:
+    from phoenix.server.types import DbSessionFactory
 
 
 async def _delete_matching_traces(
@@ -27,7 +30,7 @@ async def _delete_matching_traces(
 
 
 async def _delete_matching_traces_in_batches(
-    db: Any,
+    db: DbSessionFactory,
     project_rowids: Union[Iterable[int], InElementRole],
     trace_filter: sa.ColumnElement[bool],
     *,
@@ -101,7 +104,7 @@ class _MaxCount(BaseModel):
 
     async def _delete_count_excess_in_batches(
         self,
-        db: Any,
+        db: DbSessionFactory,
         project_rowids: Union[Iterable[int], InElementRole],
         *,
         batch_size: int = 1_000,
@@ -161,7 +164,7 @@ class MaxDaysRule(_MaxDays, BaseModel):
 
     async def delete_traces_in_batches(
         self,
-        db: Any,
+        db: DbSessionFactory,
         project_rowids: Union[Iterable[int], InElementRole],
         *,
         batch_size: int = 1_000,
@@ -196,7 +199,7 @@ class MaxCountRule(_MaxCount, BaseModel):
 
     async def delete_traces_in_batches(
         self,
-        db: Any,
+        db: DbSessionFactory,
         project_rowids: Union[Iterable[int], InElementRole],
         *,
         batch_size: int = 1_000,
@@ -230,7 +233,7 @@ class MaxDaysOrCountRule(_MaxDays, _MaxCount, BaseModel):
 
     async def delete_traces_in_batches(
         self,
-        db: Any,
+        db: DbSessionFactory,
         project_rowids: Union[Iterable[int], InElementRole],
         *,
         batch_size: int = 1_000,
@@ -267,7 +270,7 @@ class TraceRetentionRule(RootModel[Union[MaxDaysRule, MaxCountRule, MaxDaysOrCou
 
     async def delete_traces_in_batches(
         self,
-        db: Any,
+        db: DbSessionFactory,
         project_rowids: Union[Iterable[int], InElementRole],
         *,
         batch_size: int = 1_000,
