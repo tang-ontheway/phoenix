@@ -1,5 +1,24 @@
 # Changelog
 
+## [21.3.0](https://github.com/Arize-ai/phoenix/compare/arize-phoenix-v21.2.1...arize-phoenix-v21.3.0) (2026-11-19)
+
+
+### Features
+
+* **brand:** set the Arize Phoenix wordmark in Geist ([#18086](https://github.com/Arize-ai/phoenix/issues/18086)) ([b176371](https://github.com/Arize-ai/phoenix/commit/b1763711d88ac3767b710e92e1f61bede61e3f45))
+* **cli:** add dataset label assignment commands ([#17973](https://github.com/Arize-ai/phoenix/issues/17973)) ([0b821b2](https://github.com/Arize-ai/phoenix/commit/0b821b2ff030b4cf90e88096fee35f4363e3671a))
+
+
+### Bug Fixes
+
+* **server:** price Bedrock regional Claude ids at Bedrock's rate ([#18052](https://github.com/Arize-ai/phoenix/issues/18052)) ([e792adc](https://github.com/Arize-ai/phoenix/commit/e792adcaed53e8ddfe3300ff5286a00f2ecb1fe2))
+
+
+### Documentation
+
+* **skills:** add phoenix-social skill for grounded social posts staged in Typefully ([#18078](https://github.com/Arize-ai/phoenix/issues/18078)) ([465be9a](https://github.com/Arize-ai/phoenix/commit/465be9a24d40bae1108d80356f69d087bbc51c5c))
+* **skills:** weekly audit — 2026-11-18 ([#18043](https://github.com/Arize-ai/phoenix/issues/18043)) ([9649308](https://github.com/Arize-ai/phoenix/commit/9649308f9e88de1e111b1b0a4a8fa4104897d55a))
+
 ## [21.2.1](https://github.com/Arize-ai/phoenix/compare/arize-phoenix-v21.2.0...arize-phoenix-v21.2.1) (2026-11-19)
 
 
