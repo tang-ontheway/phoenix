@@ -1,5 +1,11 @@
 # @arizeai/phoenix-cli
 
+## 1.24.0
+
+### Minor Changes
+
+- 0b821b2: Add `px dataset-labels list`, `add`, `remove`, and `replace` commands to manage existing label assignments by dataset name or GlobalID, including explicitly clearing all assignments.
+
 ## 1.23.0
 
 ### Minor Changes
